@@ -1,35 +1,59 @@
 const { Book, User } = require("./models");
 
-// Define our resolvers
 const resolvers = {
   Query: {
-    books: () => Book.find(),
-    users: () => User.find(),
+    getSingleUser: async (root, args, context) => {
+      const foundUser = await User.findOne({
+        $or: [{ _id: context.user._id }, { username: args.username }],
+      });
+      if (!foundUser) {
+        throw new Error("Cannot find a user with this id!");
+      }
+      return foundUser;
+    },
   },
   Mutation: {
-    addBook: async (root, args) => {
-      const book = await Book.create(args);
-      return book;
-    },
-    addUser: async (root, args) => {
+    createUser: async (root, args, context) => {
       const user = await User.create(args);
-      return user;
+      if (!user) {
+        throw new Error("Something is wrong!");
+      }
+      const token = signToken(user);
+      return { token, user };
     },
-    addSavedBook: async (root, args) => {
-      const user = await User.findByIdAndUpdate(args.userId, {
-        $push: {
-          savedBooks: args.bookId,
-        },
+    login: async (root, args, context) => {
+      const user = await User.findOne({
+        $or: [{ username: args.username }, { email: args.email }],
       });
-      return user;
+      if (!user) {
+        throw new Error("Can't find this user");
+      }
+      const correctPw = await user.isCorrectPassword(args.password);
+      if (!correctPw) {
+        throw new Error("Wrong password!");
+      }
+      const token = signToken(user);
+      return { token, user };
     },
-    removeSavedBook: async (root, args) => {
-      const user = await User.findByIdAndUpdate(args.userId, {
-        $pull: {
-          savedBooks: args.bookId,
-        },
-      });
-      return user;
+    saveBook: async (root, args, context) => {
+      try {
+        const updatedUser = await User.findOneAndUpdate(
+          { _id: context.user._id },
+          { $addToSet: { savedBooks: args } },
+          { new: true, runValidators: true }
+        );
+        return updatedUser;
+      } catch (err) {
+        throw new Error(err);
+      }
+    },
+    deleteBook: async (root, args, context) => {
+      const updatedUser = await User.findOneAndUpdate(
+        { _id: context.user._id },
+        { $pull: { savedBooks: { bookId: args.bookId } } },
+        { new: true }
+      );
+      return updatedUser;
     },
   },
 };
